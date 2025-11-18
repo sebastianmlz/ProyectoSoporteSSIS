@@ -1,0 +1,295 @@
+﻿<?xml version="1.0"?>
+<DTS:Executable xmlns:DTS="www.microsoft.com/SqlServer/Dts"
+  DTS:refId="Package"
+  DTS:CreationDate="11/16/2025 1:46:44 PM"
+  DTS:CreationName="Microsoft.Package"
+  DTS:CreatorComputerName="LAPTOP-PBFQTHNO"
+  DTS:CreatorName="LAPTOP-PBFQTHNO\sebas"
+  DTS:DTSID="{E952829D-7D72-4A5E-A3A8-6076C3728650}"
+  DTS:ExecutableType="Microsoft.Package"
+  DTS:LastModifiedProductVersion="17.0.1008.3"
+  DTS:LocaleID="16394"
+  DTS:ObjectName="Carga_Hechos"
+  DTS:PackageType="5"
+  DTS:VersionBuild="18"
+  DTS:VersionGUID="{D5B3A325-B61A-4D67-8C72-9FC131E372F7}">
+  <DTS:Property
+    DTS:Name="PackageFormatVersion">8</DTS:Property>
+  <DTS:Variables />
+  <DTS:Executables>
+    <DTS:Executable
+      DTS:refId="Package\Cargar factActividad_Crediticia Incremental"
+      DTS:CreationName="Microsoft.ExecuteSQLTask"
+      DTS:Description="Execute SQL Task"
+      DTS:DTSID="{42459A35-B5D9-4E87-B2CE-58254E0643E6}"
+      DTS:ExecutableType="Microsoft.ExecuteSQLTask"
+      DTS:LocaleID="-1"
+      DTS:ObjectName="Cargar factActividad_Crediticia Incremental"
+      DTS:ThreadHint="0">
+      <DTS:Variables />
+      <DTS:ObjectData>
+        <SQLTask:SqlTaskData
+          SQLTask:Connection="{160E7028-C590-4B8F-966E-0E8DEB0409BB}"
+          SQLTask:SqlStatementSource="DECLARE @UltimaFechaCargada date;&#xA;DECLARE @FechaInicio        date;&#xA;&#xA;-- 1) Última fecha que ya está en el hecho&#xA;SELECT @UltimaFechaCargada = MAX(idTiempo)&#xA;FROM dbo.factActividad_Crediticia;&#xA;&#xA;IF @UltimaFechaCargada IS NULL&#xA;BEGIN&#xA;    -- Primera vez que se carga: desde 1900-01-01&#xA;    SET @FechaInicio = '19000101';&#xA;END&#xA;ELSE&#xA;BEGIN&#xA;    -- Reprocesar desde la última fecha cargada (por si hubo cambios ese día)&#xA;    SET @FechaInicio = @UltimaFechaCargada;&#xA;&#xA;    DELETE FROM dbo.factActividad_Crediticia&#xA;    WHERE idTiempo &gt;= @FechaInicio;&#xA;END;&#xA;&#xA;INSERT INTO dbo.factActividad_Crediticia&#xA;(&#xA;    idTiempo,&#xA;    idCliente,&#xA;    idSucursal,&#xA;    idTipo_Prestamo,&#xA;    idMoneda,&#xA;    MontoPrestamo,&#xA;    PrestamoCount&#xA;)&#xA;SELECT&#xA;    -- ===== Tiempo =====&#xA;    ISNULL(dt.idTiempo, CONVERT(date, '1900-01-01'))    AS idTiempo,&#xA;&#xA;    -- ===== Cliente =====&#xA;    ISNULL(dc.idCliente, 0)                             AS idCliente,&#xA;&#xA;    -- ===== Sucursal =====&#xA;    ISNULL(du.idSucursal, 0)                            AS idSucursal,&#xA;&#xA;    -- ===== Tipo de Préstamo (solo válidos, no UNKNOWN) =====&#xA;    dtp.idTipo_Prestamo                                 AS idTipo_Prestamo,&#xA;&#xA;    -- ===== Moneda =====&#xA;    ISNULL(dm.idMoneda, 0)                              AS idMoneda,&#xA;&#xA;    -- ===== Medidas =====&#xA;    SUM(CAST(cp.MontoPrincipal AS DECIMAL(19,4)))       AS MontoPrestamo,&#xA;    COUNT(DISTINCT cp.LoanCuentaId)                     AS PrestamoCount&#xA;&#xA;FROM BancoDB_Test.prestamos.CuentaPrestamo cp&#xA;&#xA;-- ---- Cuenta (obligatorio) ----&#xA;JOIN BancoDB_Test.nucleo.Cuenta c&#xA;       ON c.CuentaId = cp.CuentaId&#xA;&#xA;-- ---- Producto (obligatorio) ----&#xA;JOIN BancoDB_Test.nucleo.Producto p&#xA;       ON p.ProductoId = c.ProductoId&#xA;&#xA;-- ---- ProductoPrestamo (obligatorio: debe ser préstamo) ----&#xA;JOIN BancoDB_Test.prestamos.ProductoPrestamo pp&#xA;       ON pp.ProductoId = p.ProductoId&#xA;&#xA;-- ---- Tipo de Préstamo (dimensión) ----&#xA;JOIN dbo.dimTipo_Prestamo dtp&#xA;       ON dtp.TipoPrestamoBK = pp.LoanProductoId&#xA;&#xA;-- ---- Tiempo (puede faltar, por eso LEFT) ----&#xA;LEFT JOIN dbo.dimTiempo dt&#xA;       ON dt.idTiempo = CAST(cp.CreadoEn AS date)&#xA;&#xA;-- ---- Moneda ----&#xA;LEFT JOIN BancoDB_Test.referencial.Moneda rm&#xA;       ON rm.MonedaId = c.MonedaId&#xA;LEFT JOIN dbo.dimMoneda dm&#xA;       ON dm.Codigo = rm.Codigo COLLATE DATABASE_DEFAULT&#xA;&#xA;-- ---- TITULAR DE LA CUENTA -&gt; CLIENTE ----&#xA;LEFT JOIN (&#xA;       SELECT CuentaId, MIN(ClienteId) AS ClienteId&#xA;       FROM BancoDB_Test.nucleo.TitularCuenta&#xA;       WHERE Estado = 1&#xA;       GROUP BY CuentaId&#xA;) tc&#xA;       ON tc.CuentaId = c.CuentaId&#xA;&#xA;LEFT JOIN BancoDB_Test.nucleo.Cliente cl&#xA;       ON cl.ClienteId = tc.ClienteId&#xA;&#xA;LEFT JOIN dbo.dimCliente dc&#xA;       ON dc.ClienteBK = cl.ClienteId&#xA;&#xA;-- ---- UBICACIÓN (SucursalPrincipal del cliente) ----&#xA;LEFT JOIN dbo.dimUbicacion du&#xA;       ON du.SucursalBK = cl.SucursalPrincipalId&#xA;&#xA;WHERE&#xA;    p.Categoria LIKE 'PRESTAMO_%'&#xA;    AND CAST(cp.CreadoEn AS date) &gt;= @FechaInicio   -- filtro incremental&#xA;&#xA;GROUP BY&#xA;    ISNULL(dt.idTiempo, CONVERT(date, '1900-01-01')),&#xA;    ISNULL(dc.idCliente, 0),&#xA;    ISNULL(du.idSucursal, 0),&#xA;    dtp.idTipo_Prestamo,&#xA;    ISNULL(dm.idMoneda, 0);&#xA;" xmlns:SQLTask="www.microsoft.com/sqlserver/dts/tasks/sqltask" />
+      </DTS:ObjectData>
+    </DTS:Executable>
+    <DTS:Executable
+      DTS:refId="Package\Cargar factLiquidez Incremental"
+      DTS:CreationName="Microsoft.ExecuteSQLTask"
+      DTS:Description="Execute SQL Task"
+      DTS:DTSID="{603129A5-13DF-414D-9B6D-72BD8D6D57F0}"
+      DTS:ExecutableType="Microsoft.ExecuteSQLTask"
+      DTS:LocaleID="-1"
+      DTS:ObjectName="Cargar factLiquidez Incremental"
+      DTS:ThreadHint="0">
+      <DTS:Variables />
+      <DTS:ObjectData>
+        <SQLTask:SqlTaskData
+          SQLTask:Connection="{160E7028-C590-4B8F-966E-0E8DEB0409BB}"
+          SQLTask:SqlStatementSource="DECLARE @UltimaFechaCargada date;&#xA;DECLARE @FechaInicio        date;&#xA;&#xA;-- 1) Última fecha que ya está en el hecho&#xA;SELECT @UltimaFechaCargada = MAX(idTiempo)&#xA;FROM dbo.factLiquidez;&#xA;&#xA;IF @UltimaFechaCargada IS NULL&#xA;BEGIN&#xA;    -- Primera carga: desde 1900-01-01&#xA;    SET @FechaInicio = '19000101';&#xA;END&#xA;ELSE&#xA;BEGIN&#xA;    -- Reprocesar desde la última fecha cargada (por si hubo cambios ese día)&#xA;    SET @FechaInicio = @UltimaFechaCargada;&#xA;&#xA;    DELETE FROM dbo.factLiquidez&#xA;    WHERE idTiempo &gt;= @FechaInicio;&#xA;END;&#xA;&#xA;INSERT INTO dbo.factLiquidez&#xA;(&#xA;    idTiempo,&#xA;    idSucursal,&#xA;    idProducto,&#xA;    idMoneda,&#xA;    Disponible,&#xA;    Contable,&#xA;    RetencionMonto&#xA;)&#xA;SELECT&#xA;    /* ===== Tiempo: fecha de corte del saldo ===== */&#xA;    ISNULL(dt.idTiempo, CONVERT(date, '1900-01-01'))   AS idTiempo,&#xA;&#xA;    /* ===== Sucursal: SucursalPrincipal del cliente asociado a la cuenta ===== */&#xA;    ISNULL(du.idSucursal, 0)                           AS idSucursal,&#xA;&#xA;    /* ===== Producto ===== */&#xA;    ISNULL(dp.idProducto, 0)                           AS idProducto,&#xA;&#xA;    /* ===== Moneda ===== */&#xA;    ISNULL(dm.idMoneda, 0)                             AS idMoneda,&#xA;&#xA;    /* ===== Medidas (agregadas al grano día–sucursal–producto–moneda) ===== */&#xA;    SUM(CAST(sc.Disponible     AS DECIMAL(19,4)))      AS Disponible,&#xA;    SUM(CAST(sc.Contable       AS DECIMAL(19,4)))      AS Contable,&#xA;    SUM(CAST(sc.RetencionMonto AS DECIMAL(19,4)))      AS RetencionMonto&#xA;FROM BancoDB_Test.nucleo.SaldoCuenta     AS sc&#xA;JOIN BancoDB_Test.nucleo.Cuenta          AS c&#xA;     ON c.CuentaId = sc.CuentaId&#xA;&#xA;/* ---- Tiempo: dimTiempo (idTiempo = DATE) ---- */&#xA;LEFT JOIN dbo.dimTiempo                 AS dt&#xA;       ON dt.idTiempo = sc.FechaCorte&#xA;&#xA;/* ---- Producto: Cuenta.ProductoId -&gt; dimProducto.ProductoBK ---- */&#xA;LEFT JOIN BancoDB_Test.nucleo.Producto  AS p&#xA;       ON p.ProductoId = c.ProductoId&#xA;LEFT JOIN dbo.dimProducto               AS dp&#xA;       ON dp.ProductoBK = p.ProductoId&#xA;&#xA;/* ---- Moneda: Cuenta.MonedaId -&gt; referencial.Moneda -&gt; dimMoneda.Codigo ---- */&#xA;LEFT JOIN BancoDB_Test.referencial.Moneda AS rm&#xA;       ON rm.MonedaId = c.MonedaId&#xA;LEFT JOIN dbo.dimMoneda                 AS dm&#xA;       ON dm.Codigo COLLATE DATABASE_DEFAULT =&#xA;          UPPER(LTRIM(RTRIM(rm.Codigo))) COLLATE DATABASE_DEFAULT&#xA;&#xA;/* ---- TitularCuenta: elegimos un cliente por cuenta ---- */&#xA;LEFT JOIN (&#xA;       SELECT&#xA;           tc.CuentaId,&#xA;           MIN(tc.ClienteId) AS ClienteId&#xA;       FROM BancoDB_Test.nucleo.TitularCuenta tc&#xA;       WHERE tc.Estado = 1         -- solo titulares activos&#xA;       GROUP BY tc.CuentaId&#xA;) AS tcp ON tcp.CuentaId = c.CuentaId&#xA;&#xA;/* ---- Cliente con SucursalPrincipalId ---- */&#xA;LEFT JOIN BancoDB_Test.nucleo.Cliente   AS cl&#xA;       ON cl.ClienteId = tcp.ClienteId&#xA;&#xA;/* ---- Ubicación: Cliente.SucursalPrincipalId -&gt; dimUbicacion.SucursalBK ---- */&#xA;LEFT JOIN dbo.dimUbicacion              AS du&#xA;       ON du.SucursalBK = cl.SucursalPrincipalId&#xA;&#xA;WHERE sc.FechaCorte &gt;= @FechaInicio   -- filtro incremental&#xA;&#xA;GROUP BY&#xA;    ISNULL(dt.idTiempo, CONVERT(date, '1900-01-01')),&#xA;    ISNULL(du.idSucursal, 0),&#xA;    ISNULL(dp.idProducto, 0),&#xA;    ISNULL(dm.idMoneda, 0);&#xA;" xmlns:SQLTask="www.microsoft.com/sqlserver/dts/tasks/sqltask" />
+      </DTS:ObjectData>
+    </DTS:Executable>
+    <DTS:Executable
+      DTS:refId="Package\Cargar factMorosidad Incremental"
+      DTS:CreationName="Microsoft.ExecuteSQLTask"
+      DTS:Description="Execute SQL Task"
+      DTS:DTSID="{128BA310-AFE8-4BBB-9476-CD633E4988DA}"
+      DTS:ExecutableType="Microsoft.ExecuteSQLTask"
+      DTS:LocaleID="-1"
+      DTS:ObjectName="Cargar factMorosidad Incremental"
+      DTS:ThreadHint="0">
+      <DTS:Variables />
+      <DTS:ObjectData>
+        <SQLTask:SqlTaskData
+          SQLTask:Connection="{160E7028-C590-4B8F-966E-0E8DEB0409BB}"
+          SQLTask:SqlStatementSource="DECLARE @UltimaFechaCargada date;&#xA;DECLARE @FechaInicio        date;&#xA;&#xA;-- 1) Última fecha que ya está cargada&#xA;SELECT @UltimaFechaCargada = MAX(idTiempo)&#xA;FROM dbo.factMorosidad;&#xA;&#xA;IF @UltimaFechaCargada IS NULL&#xA;BEGIN&#xA;    -- Primera carga&#xA;    SET @FechaInicio = '19000101';&#xA;END&#xA;ELSE&#xA;BEGIN&#xA;    -- Reprocesar desde la última fecha cargada&#xA;    SET @FechaInicio = @UltimaFechaCargada;&#xA;&#xA;    DELETE FROM dbo.factMorosidad&#xA;    WHERE idTiempo &gt;= @FechaInicio;&#xA;END;&#xA;&#xA;&#xA;DECLARE @ESTADO_VENCIDO TINYINT = 0;  -- 0 = vencido&#xA;&#xA;&#xA;&#xA;INSERT INTO dbo.factMorosidad&#xA;(&#xA;    idTiempo,&#xA;    idTipo_Prestamo,&#xA;    idCliente,&#xA;    idSucursal,&#xA;    PrestamoCount,&#xA;    PrestamosVencidos,&#xA;    DiasMoraTotal,&#xA;    CuotasVencidas&#xA;)&#xA;SELECT&#xA;    /* ===== Tiempo ===== */&#xA;    ISNULL(dt.idTiempo, CONVERT(date, '1900-01-01')) AS idTiempo,&#xA;&#xA;    /* ===== Tipo de préstamo ===== */&#xA;    ISNULL(dtp.idTipo_Prestamo, 0)                   AS idTipo_Prestamo,&#xA;&#xA;    /* ===== Cliente ===== */&#xA;    ISNULL(dc.idCliente, 0)                          AS idCliente,&#xA;&#xA;    /* ===== Sucursal ===== */&#xA;    ISNULL(du.idSucursal, 0)                         AS idSucursal,&#xA;&#xA;    /* ===== Medidas ===== */&#xA;&#xA;    -- Cantidad total de préstamos en el grano&#xA;    COUNT(DISTINCT cp.LoanCuentaId) AS PrestamoCount,&#xA;&#xA;    -- Préstamos vencidos (Estado 0)&#xA;    COUNT(&#xA;        DISTINCT CASE WHEN cp.Estado = @ESTADO_VENCIDO&#xA;                       THEN cp.LoanCuentaId END&#xA;    ) AS PrestamosVencidos,&#xA;&#xA;    -- Días de mora&#xA;    SUM(&#xA;        CASE&#xA;            WHEN cp.Estado = @ESTADO_VENCIDO&#xA;                 AND cr.FechaVencimientoCuota &lt; CAST(GETDATE() AS date)&#xA;            THEN DATEDIFF(DAY, cr.FechaVencimientoCuota, CAST(GETDATE() AS date))&#xA;            ELSE 0&#xA;        END&#xA;    ) AS DiasMoraTotal,&#xA;&#xA;    -- Cuotas vencidas&#xA;    SUM(&#xA;        CASE&#xA;            WHEN cp.Estado = @ESTADO_VENCIDO&#xA;                 AND cr.FechaVencimientoCuota &lt; CAST(GETDATE() AS date)&#xA;            THEN 1&#xA;            ELSE 0&#xA;        END&#xA;    ) AS CuotasVencidas&#xA;&#xA;&#xA;FROM BancoDB_Test.prestamos.Cronograma     AS cr&#xA;JOIN BancoDB_Test.prestamos.CuentaPrestamo AS cp&#xA;     ON cp.LoanCuentaId = cr.LoanCuentaId&#xA;&#xA;/* ---- Tiempo ---- */&#xA;LEFT JOIN dbo.dimTiempo AS dt&#xA;       ON dt.idTiempo = cr.FechaVencimientoCuota&#xA;&#xA;/* ---- Cuenta asociada ---- */&#xA;LEFT JOIN BancoDB_Test.nucleo.Cuenta      AS c&#xA;       ON c.CuentaId = cp.CuentaId&#xA;&#xA;/* ---- Producto asociado ---- */&#xA;LEFT JOIN BancoDB_Test.nucleo.Producto    AS p&#xA;       ON p.ProductoId = c.ProductoId&#xA;&#xA;LEFT JOIN BancoDB_Test.prestamos.ProductoPrestamo AS pp&#xA;       ON pp.ProductoId = p.ProductoId&#xA;&#xA;LEFT JOIN dbo.dimTipo_Prestamo AS dtp&#xA;       ON dtp.TipoPrestamoBK = pp.LoanProductoId&#xA;&#xA;/* ---- Titular ---- */&#xA;LEFT JOIN (&#xA;       SELECT&#xA;           tc.CuentaId,&#xA;           MIN(tc.ClienteId) AS ClienteId&#xA;       FROM BancoDB_Test.nucleo.TitularCuenta tc&#xA;       WHERE tc.Estado = 1&#xA;       GROUP BY tc.CuentaId&#xA;) AS tcp ON tcp.CuentaId = c.CuentaId&#xA;&#xA;LEFT JOIN BancoDB_Test.nucleo.Cliente AS cl&#xA;       ON cl.ClienteId = tcp.ClienteId&#xA;&#xA;LEFT JOIN dbo.dimCliente AS dc&#xA;       ON dc.ClienteBK = cl.ClienteId&#xA;&#xA;/* ---- Sucursal ---- */&#xA;LEFT JOIN dbo.dimUbicacion AS du&#xA;       ON du.SucursalBK = cl.SucursalPrincipalId&#xA;&#xA;&#xA;WHERE&#xA;    cr.FechaVencimientoCuota &gt;= @FechaInicio   -- filtro incremental&#xA;&#xA;&#xA;GROUP BY&#xA;    ISNULL(dt.idTiempo, CONVERT(date, '1900-01-01')),&#xA;    ISNULL(dtp.idTipo_Prestamo, 0),&#xA;    ISNULL(dc.idCliente, 0),&#xA;    ISNULL(du.idSucursal, 0);&#xA;" xmlns:SQLTask="www.microsoft.com/sqlserver/dts/tasks/sqltask" />
+      </DTS:ObjectData>
+    </DTS:Executable>
+    <DTS:Executable
+      DTS:refId="Package\Cargar factOperacion_de_Cuentas Incremental"
+      DTS:CreationName="Microsoft.ExecuteSQLTask"
+      DTS:Description="Execute SQL Task"
+      DTS:DTSID="{3101F6DF-F6F6-4F6F-A211-0428350D4219}"
+      DTS:ExecutableType="Microsoft.ExecuteSQLTask"
+      DTS:LocaleID="-1"
+      DTS:ObjectName="Cargar factOperacion_de_Cuentas Incremental"
+      DTS:ThreadHint="0">
+      <DTS:Variables />
+      <DTS:ObjectData>
+        <SQLTask:SqlTaskData
+          SQLTask:Connection="{160E7028-C590-4B8F-966E-0E8DEB0409BB}"
+          SQLTask:SqlStatementSource="&#xA;&#xA;DECLARE @UltimaFechaCargada date;&#xA;DECLARE @FechaInicio date;&#xA;&#xA;-- 1) Última fecha que ya está en el hecho&#xA;SELECT @UltimaFechaCargada = MAX(idTiempo)&#xA;FROM dbo.factOperacion_de_Cuentas;&#xA;&#xA;IF @UltimaFechaCargada IS NULL&#xA;BEGIN&#xA;    SET @FechaInicio = '19000101';   -- primera vez&#xA;END&#xA;ELSE&#xA;BEGIN&#xA;    SET @FechaInicio = @UltimaFechaCargada;&#xA;    DELETE FROM dbo.factOperacion_de_Cuentas&#xA;    WHERE idTiempo &gt;= @FechaInicio;&#xA;END;&#xA;&#xA;INSERT INTO dbo.factOperacion_de_Cuentas&#xA;(&#xA;    idTiempo, idSucursal, idProducto, idMoneda,&#xA;    SaldoContable, CuentaCount&#xA;)&#xA;SELECT&#xA;    ISNULL(dt.idTiempo, CONVERT(date, '1900-01-01'))       AS idTiempo,&#xA;    ISNULL(du.idSucursal, 0)                               AS idSucursal,&#xA;    ISNULL(dp.idProducto, 0)                               AS idProducto,&#xA;    ISNULL(dm.idMoneda, 0)                                 AS idMoneda,&#xA;    SUM(CAST(sc.Contable AS DECIMAL(19,4)))                AS SaldoContable,&#xA;    COUNT(DISTINCT c.CuentaId)                             AS CuentaCount&#xA;FROM BancoDB_Test.nucleo.SaldoCuenta         AS sc&#xA;JOIN BancoDB_Test.nucleo.Cuenta              AS c   ON c.CuentaId = sc.CuentaId&#xA;LEFT JOIN dbo.dimTiempo                      AS dt  ON dt.idTiempo = sc.FechaCorte&#xA;LEFT JOIN BancoDB_Test.nucleo.Producto       AS p   ON p.ProductoId = c.ProductoId&#xA;LEFT JOIN dbo.dimProducto                    AS dp  ON dp.ProductoBK = p.ProductoId&#xA;LEFT JOIN BancoDB_Test.referencial.Moneda    AS rm  ON rm.MonedaId = c.MonedaId&#xA;LEFT JOIN dbo.dimMoneda                      AS dm&#xA;       ON dm.Codigo COLLATE DATABASE_DEFAULT =&#xA;          UPPER(LTRIM(RTRIM(rm.Codigo))) COLLATE DATABASE_DEFAULT&#xA;LEFT JOIN (&#xA;       SELECT&#xA;           tc.CuentaId,&#xA;           MIN(tc.ClienteId) AS ClienteId&#xA;       FROM BancoDB_Test.nucleo.TitularCuenta tc&#xA;       WHERE tc.Estado = 1&#xA;       GROUP BY tc.CuentaId&#xA;) AS tcp ON tcp.CuentaId = c.CuentaId&#xA;LEFT JOIN BancoDB_Test.nucleo.Cliente        AS cl&#xA;       ON cl.ClienteId = tcp.ClienteId&#xA;LEFT JOIN dbo.dimUbicacion                   AS du&#xA;       ON du.SucursalBK = cl.SucursalPrincipalId&#xA;WHERE sc.FechaCorte &gt;= @FechaInicio&#xA;GROUP BY&#xA;    ISNULL(dt.idTiempo, CONVERT(date, '1900-01-01')),&#xA;    ISNULL(du.idSucursal, 0),&#xA;    ISNULL(dp.idProducto, 0),&#xA;    ISNULL(dm.idMoneda, 0);&#xA;" xmlns:SQLTask="www.microsoft.com/sqlserver/dts/tasks/sqltask" />
+      </DTS:ObjectData>
+    </DTS:Executable>
+    <DTS:Executable
+      DTS:refId="Package\Cargar factPagos Incremental"
+      DTS:CreationName="Microsoft.ExecuteSQLTask"
+      DTS:Description="Execute SQL Task"
+      DTS:DTSID="{0FC38AE6-064A-49AC-8CAC-2330D94CF460}"
+      DTS:ExecutableType="Microsoft.ExecuteSQLTask"
+      DTS:LocaleID="-1"
+      DTS:ObjectName="Cargar factPagos Incremental"
+      DTS:ThreadHint="0">
+      <DTS:Variables />
+      <DTS:ObjectData>
+        <SQLTask:SqlTaskData
+          SQLTask:Connection="{160E7028-C590-4B8F-966E-0E8DEB0409BB}"
+          SQLTask:SqlStatementSource="&#xA;&#xA;-------------------------------------------------------------&#xA;-- CARGA INCREMENTAL factPagos&#xA;-- - Reprocesa desde la última fecha real cargada&#xA;-- - Respeta que no haya fecha centinela (si quieres una,&#xA;--   puedes usar '1900-01-01' como en los otros hechos)&#xA;-------------------------------------------------------------&#xA;&#xA;DECLARE @FechaDesde DATE;&#xA;&#xA;-- Última fecha REAL cargada&#xA;SELECT @FechaDesde = MAX(idTiempo)&#xA;FROM dbo.factPagos;&#xA;&#xA;-- Si la tabla está vacía, arrancamos desde muy atrás&#xA;IF @FechaDesde IS NULL&#xA;    SET @FechaDesde = '1900-01-01';&#xA;&#xA;-------------------------------------------------------------&#xA;-- 1) Borrar lo que haya desde @FechaDesde hacia adelante&#xA;-------------------------------------------------------------&#xA;DELETE FROM dbo.factPagos&#xA;WHERE idTiempo &gt;= @FechaDesde;&#xA;&#xA;-------------------------------------------------------------&#xA;-- 2) Volver a cargar desde BancoDB_Test&#xA;--    Solo desde @FechaDesde en adelante&#xA;-------------------------------------------------------------&#xA;INSERT INTO dbo.factPagos&#xA;(&#xA;    idTiempo,&#xA;    idCanal,&#xA;    MontoPago&#xA;)&#xA;SELECT&#xA;    -- Tiempo: fecha de creación de la transferencia&#xA;    ISNULL(dt.idTiempo, CONVERT(date, '1900-01-01')) AS idTiempo,&#xA;&#xA;    -- Canal: desde InstruccionPago.Canal -&gt; dimCanal.CanalBK&#xA;    ISNULL(dca.idCanal, 0) AS idCanal,&#xA;&#xA;    -- Medida: monto total de pagos (comisiones)&#xA;    SUM(CAST(t.MontoComision AS DECIMAL(18,2))) AS MontoPago&#xA;FROM BancoDB_Test.pagos.Transferencia   AS t&#xA;JOIN BancoDB_Test.pagos.InstruccionPago AS ip&#xA;     ON ip.PaymentOrderId = t.PaymentOrderId&#xA;&#xA;/* ---- Tiempo: dimTiempo (idTiempo = DATE) ---- */&#xA;LEFT JOIN dbo.dimTiempo AS dt&#xA;       ON dt.idTiempo = CAST(t.CreadoEn AS date)&#xA;&#xA;/* ---- Canal: InstruccionPago.Canal -&gt; dimCanal.CanalBK ---- */&#xA;LEFT JOIN dbo.dimCanal AS dca&#xA;       ON dca.CanalBK COLLATE DATABASE_DEFAULT =&#xA;          UPPER(LTRIM(RTRIM(ip.Canal))) COLLATE DATABASE_DEFAULT&#xA;&#xA;WHERE&#xA;    CAST(t.CreadoEn AS date) &gt;= @FechaDesde   -- &lt;&lt;&lt; filtro incremental&#xA;&#xA;GROUP BY&#xA;    ISNULL(dt.idTiempo, CONVERT(date, '1900-01-01')),&#xA;    ISNULL(dca.idCanal, 0);&#xA;" xmlns:SQLTask="www.microsoft.com/sqlserver/dts/tasks/sqltask" />
+      </DTS:ObjectData>
+    </DTS:Executable>
+  </DTS:Executables>
+  <DTS:PrecedenceConstraints>
+    <DTS:PrecedenceConstraint
+      DTS:refId="Package.PrecedenceConstraints[Constraint]"
+      DTS:CreationName=""
+      DTS:DTSID="{773075D7-EF9D-4889-876C-0A9378CE18F4}"
+      DTS:From="Package\Cargar factOperacion_de_Cuentas Incremental"
+      DTS:LogicalAnd="True"
+      DTS:ObjectName="Constraint"
+      DTS:To="Package\Cargar factActividad_Crediticia Incremental" />
+    <DTS:PrecedenceConstraint
+      DTS:refId="Package.PrecedenceConstraints[Constraint 1]"
+      DTS:CreationName=""
+      DTS:DTSID="{304001A6-BDBD-4A6E-8618-B2E05C3298A2}"
+      DTS:From="Package\Cargar factActividad_Crediticia Incremental"
+      DTS:LogicalAnd="True"
+      DTS:ObjectName="Constraint 1"
+      DTS:To="Package\Cargar factPagos Incremental" />
+    <DTS:PrecedenceConstraint
+      DTS:refId="Package.PrecedenceConstraints[Constraint 2]"
+      DTS:CreationName=""
+      DTS:DTSID="{2741C0D2-3741-47A2-9132-1CBB8386EB0C}"
+      DTS:From="Package\Cargar factPagos Incremental"
+      DTS:LogicalAnd="True"
+      DTS:ObjectName="Constraint 2"
+      DTS:To="Package\Cargar factLiquidez Incremental" />
+    <DTS:PrecedenceConstraint
+      DTS:refId="Package.PrecedenceConstraints[Constraint 3]"
+      DTS:CreationName=""
+      DTS:DTSID="{F481C394-F3D6-4F51-8859-D1E0DD154128}"
+      DTS:From="Package\Cargar factLiquidez Incremental"
+      DTS:LogicalAnd="True"
+      DTS:ObjectName="Constraint 3"
+      DTS:To="Package\Cargar factMorosidad Incremental" />
+  </DTS:PrecedenceConstraints>
+  <DTS:DesignTimeProperties><![CDATA[<?xml version="1.0"?>
+<!--This CDATA section contains the layout information of the package. The section includes information such as (x,y) coordinates, width, and height.-->
+<!--If you manually edit this section and make a mistake, you can delete it. -->
+<!--The package will still be able to load normally but the previous layout information will be lost and the designer will automatically re-arrange the elements on the design surface.-->
+<Objects
+  Version="8">
+  <!--Each node below will contain properties that do not affect runtime behavior.-->
+  <Package
+    design-time-name="Package">
+    <LayoutInfo>
+      <GraphLayout
+        Capacity="16" xmlns="clr-namespace:Microsoft.SqlServer.IntegrationServices.Designer.Model.Serialization;assembly=Microsoft.SqlServer.IntegrationServices.Graph" xmlns:mssgle="clr-namespace:Microsoft.SqlServer.Graph.LayoutEngine;assembly=Microsoft.SqlServer.Graph" xmlns:assembly="http://schemas.microsoft.com/winfx/2006/xaml">
+        <NodeLayout
+          Size="310,42"
+          Id="Package\Cargar factOperacion_de_Cuentas Incremental"
+          TopLeft="2,28" />
+        <NodeLayout
+          Size="291,42"
+          Id="Package\Cargar factActividad_Crediticia Incremental"
+          TopLeft="349,32" />
+        <EdgeLayout
+          Id="Package.PrecedenceConstraints[Constraint]"
+          TopLeft="312,51">
+          <EdgeLayout.Curve>
+            <mssgle:Curve
+              StartConnector="{assembly:Null}"
+              EndConnector="37,0"
+              Start="0,0"
+              End="29.5,0">
+              <mssgle:Curve.Segments>
+                <mssgle:SegmentCollection
+                  Capacity="5">
+                  <mssgle:LineSegment
+                    End="29.5,0" />
+                </mssgle:SegmentCollection>
+              </mssgle:Curve.Segments>
+            </mssgle:Curve>
+          </EdgeLayout.Curve>
+          <EdgeLayout.Labels>
+            <EdgeLabelCollection />
+          </EdgeLayout.Labels>
+        </EdgeLayout>
+        <NodeLayout
+          Size="225,42"
+          Id="Package\Cargar factPagos Incremental"
+          TopLeft="320,111" />
+        <EdgeLayout
+          Id="Package.PrecedenceConstraints[Constraint 1]"
+          TopLeft="494.5,74">
+          <EdgeLayout.Curve>
+            <mssgle:Curve
+              StartConnector="{assembly:Null}"
+              EndConnector="-62,37"
+              Start="0,0"
+              End="-62,29.5">
+              <mssgle:Curve.Segments>
+                <mssgle:SegmentCollection
+                  Capacity="5">
+                  <mssgle:LineSegment
+                    End="0,14.5" />
+                  <mssgle:CubicBezierSegment
+                    Point1="0,14.5"
+                    Point2="0,18.5"
+                    Point3="-4,18.5" />
+                  <mssgle:LineSegment
+                    End="-58,18.5" />
+                  <mssgle:CubicBezierSegment
+                    Point1="-58,18.5"
+                    Point2="-62,18.5"
+                    Point3="-62,22.5" />
+                  <mssgle:LineSegment
+                    End="-62,29.5" />
+                </mssgle:SegmentCollection>
+              </mssgle:Curve.Segments>
+            </mssgle:Curve>
+          </EdgeLayout.Curve>
+          <EdgeLayout.Labels>
+            <EdgeLabelCollection />
+          </EdgeLayout.Labels>
+        </EdgeLayout>
+        <NodeLayout
+          Size="235,42"
+          Id="Package\Cargar factLiquidez Incremental"
+          TopLeft="7,96" />
+        <EdgeLayout
+          Id="Package.PrecedenceConstraints[Constraint 2]"
+          TopLeft="320,132">
+          <EdgeLayout.Curve>
+            <mssgle:Curve
+              StartConnector="{assembly:Null}"
+              EndConnector="-78,-15"
+              Start="0,0"
+              End="-70.5,-15">
+              <mssgle:Curve.Segments>
+                <mssgle:SegmentCollection
+                  Capacity="5">
+                  <mssgle:LineSegment
+                    End="-35,0" />
+                  <mssgle:CubicBezierSegment
+                    Point1="-35,0"
+                    Point2="-39,0"
+                    Point3="-39,-4" />
+                  <mssgle:LineSegment
+                    End="-39,-11" />
+                  <mssgle:CubicBezierSegment
+                    Point1="-39,-11"
+                    Point2="-39,-15"
+                    Point3="-43,-15" />
+                  <mssgle:LineSegment
+                    End="-70.5,-15" />
+                </mssgle:SegmentCollection>
+              </mssgle:Curve.Segments>
+            </mssgle:Curve>
+          </EdgeLayout.Curve>
+          <EdgeLayout.Labels>
+            <EdgeLabelCollection />
+          </EdgeLayout.Labels>
+        </EdgeLayout>
+        <NodeLayout
+          Size="245,42"
+          Id="Package\Cargar factMorosidad Incremental"
+          TopLeft="14,169" />
+        <EdgeLayout
+          Id="Package.PrecedenceConstraints[Constraint 3]"
+          TopLeft="124.5,138">
+          <EdgeLayout.Curve>
+            <mssgle:Curve
+              StartConnector="{assembly:Null}"
+              EndConnector="12,31"
+              Start="0,0"
+              End="12,23.5">
+              <mssgle:Curve.Segments>
+                <mssgle:SegmentCollection
+                  Capacity="5">
+                  <mssgle:LineSegment
+                    End="0,11.5" />
+                  <mssgle:CubicBezierSegment
+                    Point1="0,11.5"
+                    Point2="0,15.5"
+                    Point3="4,15.5" />
+                  <mssgle:LineSegment
+                    End="8,15.5" />
+                  <mssgle:CubicBezierSegment
+                    Point1="8,15.5"
+                    Point2="12,15.5"
+                    Point3="12,19.5" />
+                  <mssgle:LineSegment
+                    End="12,23.5" />
+                </mssgle:SegmentCollection>
+              </mssgle:Curve.Segments>
+            </mssgle:Curve>
+          </EdgeLayout.Curve>
+          <EdgeLayout.Labels>
+            <EdgeLabelCollection />
+          </EdgeLayout.Labels>
+        </EdgeLayout>
+      </GraphLayout>
+    </LayoutInfo>
+  </Package>
+</Objects>]]></DTS:DesignTimeProperties>
+</DTS:Executable>
