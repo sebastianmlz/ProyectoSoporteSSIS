@@ -11,8 +11,8 @@
   DTS:LocaleID="16394"
   DTS:ObjectName="Carga_Hechos"
   DTS:PackageType="5"
-  DTS:VersionBuild="18"
-  DTS:VersionGUID="{D5B3A325-B61A-4D67-8C72-9FC131E372F7}">
+  DTS:VersionBuild="19"
+  DTS:VersionGUID="{09A49438-6F9F-49E4-9CA0-72E905E6AC5C}">
   <DTS:Property
     DTS:Name="PackageFormatVersion">8</DTS:Property>
   <DTS:Variables />
@@ -62,7 +62,7 @@
       <DTS:ObjectData>
         <SQLTask:SqlTaskData
           SQLTask:Connection="{160E7028-C590-4B8F-966E-0E8DEB0409BB}"
-          SQLTask:SqlStatementSource="DECLARE @UltimaFechaCargada date;&#xA;DECLARE @FechaInicio        date;&#xA;&#xA;-- 1) Última fecha que ya está cargada&#xA;SELECT @UltimaFechaCargada = MAX(idTiempo)&#xA;FROM dbo.factMorosidad;&#xA;&#xA;IF @UltimaFechaCargada IS NULL&#xA;BEGIN&#xA;    -- Primera carga&#xA;    SET @FechaInicio = '19000101';&#xA;END&#xA;ELSE&#xA;BEGIN&#xA;    -- Reprocesar desde la última fecha cargada&#xA;    SET @FechaInicio = @UltimaFechaCargada;&#xA;&#xA;    DELETE FROM dbo.factMorosidad&#xA;    WHERE idTiempo &gt;= @FechaInicio;&#xA;END;&#xA;&#xA;&#xA;DECLARE @ESTADO_VENCIDO TINYINT = 0;  -- 0 = vencido&#xA;&#xA;&#xA;&#xA;INSERT INTO dbo.factMorosidad&#xA;(&#xA;    idTiempo,&#xA;    idTipo_Prestamo,&#xA;    idCliente,&#xA;    idSucursal,&#xA;    PrestamoCount,&#xA;    PrestamosVencidos,&#xA;    DiasMoraTotal,&#xA;    CuotasVencidas&#xA;)&#xA;SELECT&#xA;    /* ===== Tiempo ===== */&#xA;    ISNULL(dt.idTiempo, CONVERT(date, '1900-01-01')) AS idTiempo,&#xA;&#xA;    /* ===== Tipo de préstamo ===== */&#xA;    ISNULL(dtp.idTipo_Prestamo, 0)                   AS idTipo_Prestamo,&#xA;&#xA;    /* ===== Cliente ===== */&#xA;    ISNULL(dc.idCliente, 0)                          AS idCliente,&#xA;&#xA;    /* ===== Sucursal ===== */&#xA;    ISNULL(du.idSucursal, 0)                         AS idSucursal,&#xA;&#xA;    /* ===== Medidas ===== */&#xA;&#xA;    -- Cantidad total de préstamos en el grano&#xA;    COUNT(DISTINCT cp.LoanCuentaId) AS PrestamoCount,&#xA;&#xA;    -- Préstamos vencidos (Estado 0)&#xA;    COUNT(&#xA;        DISTINCT CASE WHEN cp.Estado = @ESTADO_VENCIDO&#xA;                       THEN cp.LoanCuentaId END&#xA;    ) AS PrestamosVencidos,&#xA;&#xA;    -- Días de mora&#xA;    SUM(&#xA;        CASE&#xA;            WHEN cp.Estado = @ESTADO_VENCIDO&#xA;                 AND cr.FechaVencimientoCuota &lt; CAST(GETDATE() AS date)&#xA;            THEN DATEDIFF(DAY, cr.FechaVencimientoCuota, CAST(GETDATE() AS date))&#xA;            ELSE 0&#xA;        END&#xA;    ) AS DiasMoraTotal,&#xA;&#xA;    -- Cuotas vencidas&#xA;    SUM(&#xA;        CASE&#xA;            WHEN cp.Estado = @ESTADO_VENCIDO&#xA;                 AND cr.FechaVencimientoCuota &lt; CAST(GETDATE() AS date)&#xA;            THEN 1&#xA;            ELSE 0&#xA;        END&#xA;    ) AS CuotasVencidas&#xA;&#xA;&#xA;FROM BancoDB_Test.prestamos.Cronograma     AS cr&#xA;JOIN BancoDB_Test.prestamos.CuentaPrestamo AS cp&#xA;     ON cp.LoanCuentaId = cr.LoanCuentaId&#xA;&#xA;/* ---- Tiempo ---- */&#xA;LEFT JOIN dbo.dimTiempo AS dt&#xA;       ON dt.idTiempo = cr.FechaVencimientoCuota&#xA;&#xA;/* ---- Cuenta asociada ---- */&#xA;LEFT JOIN BancoDB_Test.nucleo.Cuenta      AS c&#xA;       ON c.CuentaId = cp.CuentaId&#xA;&#xA;/* ---- Producto asociado ---- */&#xA;LEFT JOIN BancoDB_Test.nucleo.Producto    AS p&#xA;       ON p.ProductoId = c.ProductoId&#xA;&#xA;LEFT JOIN BancoDB_Test.prestamos.ProductoPrestamo AS pp&#xA;       ON pp.ProductoId = p.ProductoId&#xA;&#xA;LEFT JOIN dbo.dimTipo_Prestamo AS dtp&#xA;       ON dtp.TipoPrestamoBK = pp.LoanProductoId&#xA;&#xA;/* ---- Titular ---- */&#xA;LEFT JOIN (&#xA;       SELECT&#xA;           tc.CuentaId,&#xA;           MIN(tc.ClienteId) AS ClienteId&#xA;       FROM BancoDB_Test.nucleo.TitularCuenta tc&#xA;       WHERE tc.Estado = 1&#xA;       GROUP BY tc.CuentaId&#xA;) AS tcp ON tcp.CuentaId = c.CuentaId&#xA;&#xA;LEFT JOIN BancoDB_Test.nucleo.Cliente AS cl&#xA;       ON cl.ClienteId = tcp.ClienteId&#xA;&#xA;LEFT JOIN dbo.dimCliente AS dc&#xA;       ON dc.ClienteBK = cl.ClienteId&#xA;&#xA;/* ---- Sucursal ---- */&#xA;LEFT JOIN dbo.dimUbicacion AS du&#xA;       ON du.SucursalBK = cl.SucursalPrincipalId&#xA;&#xA;&#xA;WHERE&#xA;    cr.FechaVencimientoCuota &gt;= @FechaInicio   -- filtro incremental&#xA;&#xA;&#xA;GROUP BY&#xA;    ISNULL(dt.idTiempo, CONVERT(date, '1900-01-01')),&#xA;    ISNULL(dtp.idTipo_Prestamo, 0),&#xA;    ISNULL(dc.idCliente, 0),&#xA;    ISNULL(du.idSucursal, 0);&#xA;" xmlns:SQLTask="www.microsoft.com/sqlserver/dts/tasks/sqltask" />
+          SQLTask:SqlStatementSource="DECLARE @UltimaFechaCargada date;&#xA;DECLARE @FechaInicio        date;&#xA;DECLARE @FechaCorte         date;&#xA;&#xA;-- 1) Última fecha que ya está cargada en el DW&#xA;SELECT @UltimaFechaCargada = MAX(idTiempo)&#xA;FROM dbo.factMorosidad;&#xA;&#xA;IF @UltimaFechaCargada IS NULL&#xA;BEGIN&#xA;    -- Primera carga: desde el inicio de los tiempos&#xA;    SET @FechaInicio = '19000101';&#xA;END&#xA;ELSE&#xA;BEGIN&#xA;    -- Reprocesar desde la última fecha cargada (incluyéndola)&#xA;    SET @FechaInicio = @UltimaFechaCargada;&#xA;&#xA;    DELETE FROM dbo.factMorosidad&#xA;    WHERE idTiempo &gt;= @FechaInicio;&#xA;END;&#xA;&#xA;-- Fecha de corte para calcular días de mora&#xA;SET @FechaCorte = CAST(GETDATE() AS date);&#xA;&#xA;&#xA;&#xA;INSERT INTO dbo.factMorosidad&#xA;(&#xA;    idTiempo,&#xA;    idTipo_Prestamo,&#xA;    idCliente,&#xA;    idSucursal,&#xA;    PrestamoCount,&#xA;    PrestamosVencidos,&#xA;    DiasMoraTotal,&#xA;    CuotasVencidas&#xA;)&#xA;SELECT&#xA;    /* ===== Tiempo: fecha de vencimiento de la cuota ===== */&#xA;    ISNULL(dt.idTiempo, CONVERT(date, '1900-01-01')) AS idTiempo,&#xA;&#xA;    /* ===== Tipo de préstamo (solo verdaderos préstamos) ===== */&#xA;    dtp.idTipo_Prestamo                             AS idTipo_Prestamo,&#xA;&#xA;    /* ===== Cliente ===== */&#xA;    ISNULL(dc.idCliente, 0)                         AS idCliente,&#xA;&#xA;    /* ===== Sucursal (SucursalPrincipal del cliente) ===== */&#xA;    ISNULL(du.idSucursal, 0)                        AS idSucursal,&#xA;&#xA;    /* ===== Medidas ===== */&#xA;&#xA;    -- Préstamos totales en el grano&#xA;    COUNT(DISTINCT cp.LoanCuentaId) AS PrestamoCount,&#xA;&#xA;    -- Préstamos vencidos: tienen AL MENOS una cuota vencida&#xA;    COUNT(DISTINCT CASE &#xA;        WHEN cr.FechaVencimientoCuota &lt;= @FechaCorte&#xA;         AND cr.MontoPagado &lt; (cr.CapitalVencido + cr.InteresVencido + cr.CargosVencidos)&#xA;        THEN cp.LoanCuentaId&#xA;    END) AS PrestamosVencidos,&#xA;&#xA;    -- Suma de días de mora (solo cuotas vencidas)&#xA;    SUM(CASE&#xA;            WHEN cr.FechaVencimientoCuota &lt;= @FechaCorte&#xA;             AND cr.MontoPagado &lt; (cr.CapitalVencido + cr.InteresVencido + cr.CargosVencidos)&#xA;            THEN DATEDIFF(DAY, cr.FechaVencimientoCuota, @FechaCorte)&#xA;            ELSE 0&#xA;        END&#xA;    ) AS DiasMoraTotal,&#xA;&#xA;    -- Número de cuotas vencidas&#xA;    SUM(CASE&#xA;            WHEN cr.FechaVencimientoCuota &lt;= @FechaCorte&#xA;             AND cr.MontoPagado &lt; (cr.CapitalVencido + cr.InteresVencido + cr.CargosVencidos)&#xA;            THEN 1&#xA;            ELSE 0&#xA;        END&#xA;    ) AS CuotasVencidas&#xA;&#xA;FROM BancoDB_Test.prestamos.Cronograma     AS cr&#xA;JOIN BancoDB_Test.prestamos.CuentaPrestamo AS cp&#xA;     ON cp.LoanCuentaId = cr.LoanCuentaId&#xA;&#xA;/* ---- Tiempo ---- */&#xA;LEFT JOIN dbo.dimTiempo AS dt&#xA;       ON dt.idTiempo = cr.FechaVencimientoCuota&#xA;&#xA;/* ---- Cuenta asociada ---- */&#xA;LEFT JOIN BancoDB_Test.nucleo.Cuenta      AS c&#xA;       ON c.CuentaId = cp.CuentaId&#xA;&#xA;/* ---- Producto asociado ---- */&#xA;LEFT JOIN BancoDB_Test.nucleo.Producto    AS p&#xA;       ON p.ProductoId = c.ProductoId&#xA;&#xA;LEFT JOIN BancoDB_Test.prestamos.ProductoPrestamo AS pp&#xA;       ON pp.ProductoId = p.ProductoId&#xA;&#xA;/* ---- Tipo de préstamo (BK = LoanProductoId) ---- */&#xA;LEFT JOIN dbo.dimTipo_Prestamo AS dtp&#xA;       ON dtp.TipoPrestamoBK = pp.LoanProductoId&#xA;&#xA;/* ---- Titular ---- */&#xA;LEFT JOIN (&#xA;       SELECT&#xA;           tc.CuentaId,&#xA;           MIN(tc.ClienteId) AS ClienteId&#xA;       FROM BancoDB_Test.nucleo.TitularCuenta tc&#xA;       WHERE tc.Estado = 1&#xA;       GROUP BY tc.CuentaId&#xA;) AS tcp ON tcp.CuentaId = c.CuentaId&#xA;&#xA;LEFT JOIN BancoDB_Test.nucleo.Cliente AS cl&#xA;       ON cl.ClienteId = tcp.ClienteId&#xA;&#xA;LEFT JOIN dbo.dimCliente AS dc&#xA;       ON dc.ClienteBK = cl.ClienteId&#xA;&#xA;/* ---- Sucursal ---- */&#xA;LEFT JOIN dbo.dimUbicacion AS du&#xA;       ON du.SucursalBK = cl.SucursalPrincipalId&#xA;&#xA;WHERE&#xA;    cr.FechaVencimientoCuota &gt;= @FechaInicio           -- filtro incremental&#xA;    AND dtp.idTipo_Prestamo IS NOT NULL                -- sólo tipos válidos&#xA;    AND dtp.idTipo_Prestamo &lt;&gt; 0                       -- excluir cuentas que no son préstamo&#xA;&#xA;GROUP BY&#xA;    ISNULL(dt.idTiempo, CONVERT(date, '1900-01-01')),&#xA;    dtp.idTipo_Prestamo,&#xA;    ISNULL(dc.idCliente, 0),&#xA;    ISNULL(du.idSucursal, 0);&#xA;" xmlns:SQLTask="www.microsoft.com/sqlserver/dts/tasks/sqltask" />
       </DTS:ObjectData>
     </DTS:Executable>
     <DTS:Executable
@@ -145,13 +145,25 @@
       <GraphLayout
         Capacity="16" xmlns="clr-namespace:Microsoft.SqlServer.IntegrationServices.Designer.Model.Serialization;assembly=Microsoft.SqlServer.IntegrationServices.Graph" xmlns:mssgle="clr-namespace:Microsoft.SqlServer.Graph.LayoutEngine;assembly=Microsoft.SqlServer.Graph" xmlns:assembly="http://schemas.microsoft.com/winfx/2006/xaml">
         <NodeLayout
+          Size="291,42"
+          Id="Package\Cargar factActividad_Crediticia Incremental"
+          TopLeft="349,32" />
+        <NodeLayout
+          Size="235,42"
+          Id="Package\Cargar factLiquidez Incremental"
+          TopLeft="7,96" />
+        <NodeLayout
+          Size="245,42"
+          Id="Package\Cargar factMorosidad Incremental"
+          TopLeft="14,169" />
+        <NodeLayout
           Size="310,42"
           Id="Package\Cargar factOperacion_de_Cuentas Incremental"
           TopLeft="2,28" />
         <NodeLayout
-          Size="291,42"
-          Id="Package\Cargar factActividad_Crediticia Incremental"
-          TopLeft="349,32" />
+          Size="225,42"
+          Id="Package\Cargar factPagos Incremental"
+          TopLeft="320,111" />
         <EdgeLayout
           Id="Package.PrecedenceConstraints[Constraint]"
           TopLeft="312,51">
@@ -174,10 +186,6 @@
             <EdgeLabelCollection />
           </EdgeLayout.Labels>
         </EdgeLayout>
-        <NodeLayout
-          Size="225,42"
-          Id="Package\Cargar factPagos Incremental"
-          TopLeft="320,111" />
         <EdgeLayout
           Id="Package.PrecedenceConstraints[Constraint 1]"
           TopLeft="494.5,74">
@@ -212,10 +220,6 @@
             <EdgeLabelCollection />
           </EdgeLayout.Labels>
         </EdgeLayout>
-        <NodeLayout
-          Size="235,42"
-          Id="Package\Cargar factLiquidez Incremental"
-          TopLeft="7,96" />
         <EdgeLayout
           Id="Package.PrecedenceConstraints[Constraint 2]"
           TopLeft="320,132">
@@ -250,10 +254,6 @@
             <EdgeLabelCollection />
           </EdgeLayout.Labels>
         </EdgeLayout>
-        <NodeLayout
-          Size="245,42"
-          Id="Package\Cargar factMorosidad Incremental"
-          TopLeft="14,169" />
         <EdgeLayout
           Id="Package.PrecedenceConstraints[Constraint 3]"
           TopLeft="124.5,138">
